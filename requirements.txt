@@ -7,3 +7,4 @@ joblib
 pandas
 scipy
 plotly
+seaborn
