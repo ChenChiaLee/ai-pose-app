@@ -170,7 +170,7 @@ def create_interactive_plots(predictions, ground_truth=None, frame_truths=None):
     # 創建子圖
     fig = make_subplots(
         rows=2, cols=2,
-        subplot_titles=('預測值隨時間變化', '預測值分布', '統計摘要', '預測 vs 真實值比較'),
+        subplot_titles=('預測值隨時間變化', '預測值分布', '統計摘要'),
         specs=[[{"secondary_y": False}, {"secondary_y": False}],
                [{"type": "table"}, {"secondary_y": False}]]
     )
@@ -214,7 +214,7 @@ def create_interactive_plots(predictions, ground_truth=None, frame_truths=None):
         ),
         row=2, col=1
     )
-    
+    '''
     # 4. 如果有逐幀真實值，顯示比較
     if frame_truths and len(frame_truths) == len(predictions_flat):
         fig.add_trace(
@@ -236,7 +236,7 @@ def create_interactive_plots(predictions, ground_truth=None, frame_truths=None):
             bgcolor="white",
             bordercolor="black"
         )
-    
+    '''
     fig.update_layout(height=800, showlegend=True, title_text="姿勢評估分析結果")
     return fig
 
@@ -250,21 +250,25 @@ def main():
     # 模型檔案路徑設定
     model_path = st.sidebar.text_input(
         "模型檔案路徑", 
-        value=r"D:\Thesis\20250610_process\Alexnet_squat0603.keras",
+        value="Alexnet_squat0603.keras",
         help="請輸入訓練好的 Keras 模型檔案路徑"
-    )
-    
+        )
+
     scaler_path = st.sidebar.text_input(
         "標準化器檔案路徑", 
-        value=r"D:\Thesis\20250610_process\scaler_Alexnet_squat0603.pkl",
+        value="scaler_Alexnet_squat0603.pkl",
         help="請輸入用於資料標準化的 scaler 檔案路徑"
-    )
-    
+        )
+    '''
     ground_truth_path = st.sidebar.text_input(
         "真實標籤檔案路徑（可選）", 
-        value=r"D:\Thesis\20250610_process\squat_400(0603).csv",
+        value="squat_400(0603).csv",
         help="如果有真實標籤資料，請輸入 CSV 檔案路徑"
-    )
+        )
+    '''
+    
+    # 新增以下這行，用來顯示Streamlit Cloud上的檔案列表
+    st.sidebar.text(f"當前目錄中的檔案:\n{os.listdir('.')}")
     
     # 檢查檔案是否存在
     files_exist = all([
@@ -279,7 +283,7 @@ def main():
     # 初始化評估器
     try:
         with st.spinner("正在載入模型..."):
-            evaluator = PoseEvaluator(model_path, scaler_path, ground_truth_path)
+            evaluator = PoseEvaluator(model_path, scaler_path)
         st.sidebar.success("✅ 模型載入成功")
     except Exception as e:
         st.sidebar.error(f"❌ 模型載入失敗: {str(e)}")
@@ -429,7 +433,7 @@ def main():
         ], columns=['項目', '數值'])
         
         st.dataframe(stats_df, use_container_width=True)
-        
+'''       
         # 下載結果
         if st.button("📥 下載分析結果"):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -457,6 +461,6 @@ def main():
                 file_name=f"pose_analysis_{timestamp}.json",
                 mime="application/json"
             )
-
+'''
 if __name__ == "__main__":
     main()
