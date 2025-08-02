@@ -27,7 +27,7 @@ st.set_page_config(
 )
 
 class PoseEvaluator:
-    def __init__(self, model_path: str, scaler_path: str, ground_truth_path: str = None):
+    def __init__(self, model_path: str, scaler_path : str = None):
         self.model = keras.models.load_model(model_path)
         self.scaler = joblib.load(scaler_path)
         self.mp_pose = mp.solutions.pose
@@ -36,11 +36,6 @@ class PoseEvaluator:
             min_tracking_confidence=0.5,
             model_complexity=2
         )
-        
-        # 載入真實標籤資料
-        self.ground_truth_df = None
-        if ground_truth_path and os.path.exists(ground_truth_path):
-            self.ground_truth_df = pd.read_csv(ground_truth_path)
 
     def process_frame(self, frame: np.ndarray) -> List[float]:
         """處理單個影格並提取關鍵點（使用相對座標）"""
