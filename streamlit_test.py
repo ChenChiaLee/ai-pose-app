@@ -11,6 +11,7 @@ from datetime import datetime
 import pandas as pd
 import os
 import tempfile
+import shutil # 新增這行
 import seaborn as sns
 from scipy.stats import pearsonr
 import plotly.express as px
@@ -270,7 +271,24 @@ def main():
         os.path.exists(model_path) if model_path else False,
         os.path.exists(scaler_path) if scaler_path else False
     ])
-    
+    # 檢查檔案是否存在
+    files_exist = all([
+        os.path.exists(model_path) if model_path else False,
+        os.path.exists(scaler_path) if scaler_path else False,
+        ])
+
+    # 新增以下這段程式碼
+    if files_exist:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path_temp = os.path.join(tmpdir, os.path.basename(model_path))
+            scaler_path_temp = os.path.join(tmpdir, os.path.basename(scaler_path))
+
+            shutil.copy(model_path, model_path_temp)
+            shutil.copy(scaler_path, scaler_path_temp)
+
+            model_path = model_path_temp
+            scaler_path = scaler_path_temp
+            
     if not files_exist:
         st.error("❌ 請確認模型檔案和標準化器檔案路徑正確")
         st.stop()
