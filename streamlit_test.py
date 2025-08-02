@@ -11,7 +11,7 @@ from datetime import datetime
 import pandas as pd
 import os
 import tempfile
-import shutil # 新增這行
+import shutil
 import seaborn as sns
 from scipy.stats import pearsonr
 import plotly.express as px
@@ -168,7 +168,7 @@ def create_interactive_plots(predictions, ground_truth=None, frame_truths=None):
         rows=2, cols=2,
         subplot_titles=('預測值隨時間變化', '預測值分布', '統計摘要'),
         specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"type": "table"}, {"secondary_y": False}]]
+                [{"type": "table"}, {"secondary_y": False}]]
     )
     
     # 1. 預測值隨時間變化
@@ -206,7 +206,7 @@ def create_interactive_plots(predictions, ground_truth=None, frame_truths=None):
         go.Table(
             header=dict(values=['統計項目', '數值']),
             cells=dict(values=[[row[0] for row in stats_data], 
-                              [row[1] for row in stats_data]])
+                               [row[1] for row in stats_data]])
         ),
         row=2, col=1
     )
@@ -248,37 +248,36 @@ def main():
         "模型檔案路徑", 
         value="Alexnet_squat0603.keras",
         help="請輸入訓練好的 Keras 模型檔案路徑"
-        )
+    )
 
     scaler_path = st.sidebar.text_input(
         "標準化器檔案路徑", 
         value="scaler_Alexnet_squat0603.pkl",
         help="請輸入用於資料標準化的 scaler 檔案路徑"
-        )
+    )
     '''
     ground_truth_path = st.sidebar.text_input(
         "真實標籤檔案路徑（可選）", 
         value="squat_400(0603).csv",
         help="如果有真實標籤資料，請輸入 CSV 檔案路徑"
-        )
+    )
     '''
     
     # 新增以下這行，用來顯示Streamlit Cloud上的檔案列表
     st.sidebar.text(f"當前目錄中的檔案:\n{os.listdir('.')}")
-    
-    # 檢查檔案是否存在
-    files_exist = all([
-        os.path.exists(model_path) if model_path else False,
-        os.path.exists(scaler_path) if scaler_path else False
-    ])
+
     # 檢查檔案是否存在
     files_exist = all([
         os.path.exists(model_path) if model_path else False,
         os.path.exists(scaler_path) if scaler_path else False,
-        ])
-
-    # 新增以下這段程式碼
-    if files_exist:
+    ])
+    
+    if not files_exist:
+        st.error("❌ 請確認模型檔案和標準化器檔案路徑正確")
+        st.stop()
+    
+    # 初始化評估器
+    try:
         with tempfile.TemporaryDirectory() as tmpdir:
             model_path_temp = os.path.join(tmpdir, os.path.basename(model_path))
             scaler_path_temp = os.path.join(tmpdir, os.path.basename(scaler_path))
@@ -286,18 +285,9 @@ def main():
             shutil.copy(model_path, model_path_temp)
             shutil.copy(scaler_path, scaler_path_temp)
 
-            model_path = model_path_temp
-            scaler_path = scaler_path_temp
-            
-    if not files_exist:
-        st.error("❌ 請確認模型檔案和標準化器檔案路徑正確")
-        st.stop()
-    
-    # 初始化評估器
-    try:
-        with st.spinner("正在載入模型..."):
-            evaluator = PoseEvaluator(model_path, scaler_path)
-        st.sidebar.success("✅ 模型載入成功")
+            with st.spinner("正在載入模型..."):
+                evaluator = PoseEvaluator(model_path_temp, scaler_path_temp)
+            st.sidebar.success("✅ 模型載入成功")
     except Exception as e:
         st.sidebar.error(f"❌ 模型載入失敗: {str(e)}")
         st.stop()
@@ -446,7 +436,7 @@ def main():
         ], columns=['項目', '數值'])
         
         st.dataframe(stats_df, use_container_width=True)
-        '''      
+        '''     
         # 下載結果
         if st.button("📥 下載分析結果"):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -474,6 +464,6 @@ def main():
                 file_name=f"pose_analysis_{timestamp}.json",
                 mime="application/json"
             )
-           '''
+            '''
 if __name__ == "__main__":
     main()
