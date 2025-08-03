@@ -39,9 +39,15 @@ class PoseEvaluator:
         self.mp_pose = mp.solutions.pose
         
         # === 解決 mediapipe 模型下載權限問題的程式碼 START ===
-        # mediapipe 模型預設存放路徑
-        mp_models_path = os.path.join(mp.solutions.pose.__path__[0], 'pose_landmark_heavy.tflite')
-        
+        # 獲取 mediapipe 模型的預期存放路徑
+        # 使用 __file__ 屬性來獲取模組路徑，這通常更可靠
+        try:
+            mp_solutions_dir = os.path.dirname(mp.solutions.pose.__file__)
+            mp_models_path = os.path.join(mp_solutions_dir, 'pose_landmark_heavy.tflite')
+        except AttributeError:
+            st.error("❌ 找不到 mediapipe.solutions.pose 的安裝路徑。")
+            raise
+
         # 檢查模型檔案是否已存在於 mediapipe 預期路徑
         if not os.path.exists(mp_models_path):
             st.warning("mediapipe 模型檔案不存在，正在嘗試從儲存庫複製...")
