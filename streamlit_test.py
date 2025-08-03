@@ -28,7 +28,12 @@ st.set_page_config(
 
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
-        self.model = keras.models.load_model(model_path)
+        # 定義自訂損失函數 rmse
+        def rmse(y_true, y_pred):
+            return tf.sqrt(tf.reduce_mean(tf.square(y_true - y_pred)))
+        
+        # 載入模型時，將自訂函數傳入 custom_objects
+        self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
