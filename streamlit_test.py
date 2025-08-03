@@ -36,10 +36,14 @@ class PoseEvaluator:
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
         self.mp_pose = mp.solutions.pose
+        
+        # 這裡修改了 mediapipe.Pose 的初始化
+        # 確保 model_path 指向您上傳到 GitHub 的檔案
         self.pose = self.mp_pose.Pose(
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5,
-            model_complexity=2
+            model_complexity=2,
+            model_path="pose_landmark_heavy.tflite"  # 新增此行
         )
 
     def process_frame(self, frame: np.ndarray) -> List[float]:
