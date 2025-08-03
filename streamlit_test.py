@@ -31,40 +31,59 @@ st.set_page_config(
 def rmse(y_true, y_pred):
     return tf.sqrt(tf.reduce_mean(tf.square(y_true - y_pred)))
 
+# 使用 os.symlink 創建軟連結來解決權限問題
+def setup_mediapipe_model():
+    """
+    此函數會透過建立軟連結，將 mediapipe 的模型路徑重新導向到一個可寫入的目錄，
+    以解決 Streamlit Cloud 上的 Permission denied 錯誤。
+    """
+    try:
+        # Streamlit Cloud 上的 mediapipe 預設模型目錄
+        src_dir = '/home/adminuser/venv/lib/python3.11/site-packages/mediapipe/modules/pose_landmark/'
+        
+        # 我們可寫入的暫存目錄
+        dest_dir = '/tmp/mediapipe_pose_models/'
+        
+        # 確保目標目錄存在
+        os.makedirs(dest_dir, exist_ok=True)
+        
+        # 模型檔案在 GitHub 儲存庫的根目錄
+        repo_model_path = os.path.join(os.getcwd(), 'pose_landmark_heavy.tflite')
+        
+        if not os.path.exists(repo_model_path):
+            st.error("❌ 找不到專案根目錄中的 'pose_landmark_heavy.tflite' 檔案，請確保已上傳至 GitHub。")
+            return False
+            
+        # 將模型檔案複製到我們的暫存目錄
+        shutil.copyfile(repo_model_path, os.path.join(dest_dir, 'pose_landmark_heavy.tflite'))
+        
+        # 建立一個軟連結，將 mediapipe 導向到我們的暫存目錄
+        # 注意：我們需要先檢查連結是否已存在，否則會報錯
+        if not os.path.exists(src_dir):
+            os.makedirs(src_dir, exist_ok=True)
+            
+        symlink_path = os.path.join(src_dir, 'pose_landmark_heavy.tflite')
+        
+        if not os.path.exists(symlink_path):
+            os.symlink(os.path.join(dest_dir, 'pose_landmark_heavy.tflite'), symlink_path)
+        
+        st.sidebar.success("✅ mediapipe 模型路徑已成功修復！")
+        return True
+    
+    except Exception as e:
+        st.sidebar.error(f"❌ 修復 mediapipe 模型路徑時發生錯誤: {e}")
+        return False
+
+
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
         # 載入模型時，將自訂函數傳入 custom_objects
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
-        
-        # === 解決 mediapipe 模型下載權限問題的程式碼 START ===
-        # 設置 MEDIAPIPE_MODELS_PATH 環境變數以指定模型存放目錄
-        # 這樣可以繞過系統權限問題
-        mediapipe_models_dir = '/tmp/mediapipe_models'
-        os.makedirs(mediapipe_models_dir, exist_ok=True)
-        os.environ['MEDIAPIPE_MODELS_PATH'] = mediapipe_models_dir
-        
-        mp_models_path = os.path.join(mediapipe_models_dir, 'pose_landmark_heavy.tflite')
-        
-        # 檢查模型檔案是否已存在於 Streamlit 可寫入的目錄
-        if not os.path.exists(mp_models_path):
-            st.warning("mediapipe 模型檔案不存在，正在嘗試從儲存庫複製到可寫入目錄...")
-            # 模型檔案在 GitHub 儲存庫的根目錄
-            repo_model_path = os.path.join(os.getcwd(), 'pose_landmark_heavy.tflite')
-            if os.path.exists(repo_model_path):
-                try:
-                    shutil.copyfile(repo_model_path, mp_models_path)
-                    st.success("✅ mediapipe 模型檔案複製成功！")
-                except Exception as e:
-                    st.error(f"❌ 複製 mediapipe 模型檔案時發生錯誤: {e}")
-                    raise
-            else:
-                st.error("❌ 找不到儲存庫中的 'pose_landmark_heavy.tflite' 檔案，請確保已上傳至 GitHub。")
-                raise FileNotFoundError("找不到 'pose_landmark_heavy.tflite' 檔案")
-        # === 解決 mediapipe 模型下載權限問題的程式碼 END ===
-        
-        # 初始化 mediapipe
         self.mp_pose = mp.solutions.pose
+        
+        # 載入 mediapipe 姿勢模型
+        # model_complexity=2 對應 mediapipe 的 pose_landmark_heavy.tflite
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
             model_complexity=2,
@@ -195,6 +214,11 @@ def main():
     st.title("🏃‍♂️ AI 姿勢評估系統")
     st.markdown("---")
 
+    # 在載入模型前先進行 mediapipe 的路徑修復
+    if not setup_mediapipe_model():
+        st.sidebar.error("❌ 系統初始化失敗，無法修復 mediapipe 模型路徑。")
+        st.stop()
+        
     # 側邊欄 - 設定參數
     st.sidebar.header("⚙️ 系統設定")
 
