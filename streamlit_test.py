@@ -17,6 +17,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import shutil
 
 # 設定頁面配置
 st.set_page_config(
@@ -26,24 +27,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 定義自訂損失函數
+def rmse(y_true, y_pred):
+    return tf.sqrt(tf.reduce_mean(tf.square(y_true - y_pred)))
+
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
-        # 定義自訂損失函數 rmse
-        def rmse(y_true, y_pred):
-            return tf.sqrt(tf.reduce_mean(tf.square(y_true - y_pred)))
-        
         # 載入模型時，將自訂函數傳入 custom_objects
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
         self.mp_pose = mp.solutions.pose
         
-        # 這裡修改了 mediapipe.Pose 的初始化
-        # 確保 model_path 指向您上傳到 GitHub 的檔案
+        # === 解決 mediapipe 模型下載權限問題的程式碼 START ===
+        # mediapipe 模型預設存放路徑
+        mp_models_path = os.path.join(mp.solutions.pose.__path__[0], 'pose_landmark_heavy.tflite')
+        
+        # 檢查模型檔案是否已存在於 mediapipe 預期路徑
+        if not os.path.exists(mp_models_path):
+            st.warning("mediapipe 模型檔案不存在，正在嘗試從儲存庫複製...")
+            # 模型檔案在 GitHub 儲存庫的根目錄
+            repo_model_path = os.path.join(os.getcwd(), 'pose_landmark_heavy.tflite')
+            if os.path.exists(repo_model_path):
+                # 複製檔案到 mediapipe 預期路徑
+                try:
+                    shutil.copyfile(repo_model_path, mp_models_path)
+                    st.success("✅ mediapipe 模型檔案複製成功！")
+                except Exception as e:
+                    st.error(f"❌ 複製 mediapipe 模型檔案時發生錯誤: {e}")
+                    raise
+            else:
+                st.error("❌ 找不到儲存庫中的 'pose_landmark_heavy.tflite' 檔案，請確保已上傳至 GitHub。")
+                raise FileNotFoundError("找不到 'pose_landmark_heavy.tflite' 檔案")
+        # === 解決 mediapipe 模型下載權限問題的程式碼 END ===
+
+        # 載入 mediapipe 姿勢模型
+        # model_complexity=2 對應 mediapipe 的 pose_landmark_heavy.tflite
         self.pose = self.mp_pose.Pose(
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
+            static_image_mode=False,
             model_complexity=2,
-            model_path="pose_landmark_heavy.tflite"  # 新增此行
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
         )
 
     def process_frame(self, frame: np.ndarray) -> List[float]:
@@ -175,13 +198,13 @@ def main():
     # 模型檔案路徑設定
     model_path = st.sidebar.text_input(
         "模型檔案路徑",
-        value=r"CNN_squat_best.keras",
+        value="CNN_squat_best.keras",
         help="請輸入訓練好的 Keras 模型檔案路徑"
     )
 
     scaler_path = st.sidebar.text_input(
         "標準化器檔案路徑",
-        value=r"scaler_CNN_squat_best.pkl",
+        value="scaler_CNN_squat_best.pkl",
         help="請輸入用於資料標準化的 scaler 檔案路徑"
     )
     
