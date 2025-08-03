@@ -166,13 +166,13 @@ def main():
     # 模型檔案路徑設定
     model_path = st.sidebar.text_input(
         "模型檔案路徑",
-        value=r"D:\Thesis\20250610_process\Alexnet_squat0603.keras",
+        value=r"CNN_squat_best.keras",
         help="請輸入訓練好的 Keras 模型檔案路徑"
     )
 
     scaler_path = st.sidebar.text_input(
         "標準化器檔案路徑",
-        value=r"D:\Thesis\20250610_process\scaler_Alexnet_squat0603.pkl",
+        value=r"scaler_CNN_squat_best.pkl",
         help="請輸入用於資料標準化的 scaler 檔案路徑"
     )
     
