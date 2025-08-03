@@ -36,25 +36,22 @@ class PoseEvaluator:
         # 載入模型時，將自訂函數傳入 custom_objects
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
-        self.mp_pose = mp.solutions.pose
         
         # === 解決 mediapipe 模型下載權限問題的程式碼 START ===
-        # 獲取 mediapipe 模型的預期存放路徑
-        # 使用 __file__ 屬性來獲取模組路徑，這通常更可靠
-        try:
-            mp_solutions_dir = os.path.dirname(mp.solutions.pose.__file__)
-            mp_models_path = os.path.join(mp_solutions_dir, 'pose_landmark_heavy.tflite')
-        except AttributeError:
-            st.error("❌ 找不到 mediapipe.solutions.pose 的安裝路徑。")
-            raise
-
-        # 檢查模型檔案是否已存在於 mediapipe 預期路徑
+        # 設置 MEDIAPIPE_MODELS_PATH 環境變數以指定模型存放目錄
+        # 這樣可以繞過系統權限問題
+        mediapipe_models_dir = '/tmp/mediapipe_models'
+        os.makedirs(mediapipe_models_dir, exist_ok=True)
+        os.environ['MEDIAPIPE_MODELS_PATH'] = mediapipe_models_dir
+        
+        mp_models_path = os.path.join(mediapipe_models_dir, 'pose_landmark_heavy.tflite')
+        
+        # 檢查模型檔案是否已存在於 Streamlit 可寫入的目錄
         if not os.path.exists(mp_models_path):
-            st.warning("mediapipe 模型檔案不存在，正在嘗試從儲存庫複製...")
+            st.warning("mediapipe 模型檔案不存在，正在嘗試從儲存庫複製到可寫入目錄...")
             # 模型檔案在 GitHub 儲存庫的根目錄
             repo_model_path = os.path.join(os.getcwd(), 'pose_landmark_heavy.tflite')
             if os.path.exists(repo_model_path):
-                # 複製檔案到 mediapipe 預期路徑
                 try:
                     shutil.copyfile(repo_model_path, mp_models_path)
                     st.success("✅ mediapipe 模型檔案複製成功！")
@@ -65,9 +62,9 @@ class PoseEvaluator:
                 st.error("❌ 找不到儲存庫中的 'pose_landmark_heavy.tflite' 檔案，請確保已上傳至 GitHub。")
                 raise FileNotFoundError("找不到 'pose_landmark_heavy.tflite' 檔案")
         # === 解決 mediapipe 模型下載權限問題的程式碼 END ===
-
-        # 載入 mediapipe 姿勢模型
-        # model_complexity=2 對應 mediapipe 的 pose_landmark_heavy.tflite
+        
+        # 初始化 mediapipe
+        self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
             model_complexity=2,
