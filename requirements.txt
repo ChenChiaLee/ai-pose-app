@@ -1,8 +1,8 @@
 streamlit
 tensorflow
 numpy==1.26.4
-opencv-python==4.6.0.66
-mediapipe
+opencv-python==4.8.0.76
+mediapipe==0.10.11
 joblib
 pandas
 scipy
