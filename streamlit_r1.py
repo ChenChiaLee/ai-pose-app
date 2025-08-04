@@ -4,7 +4,10 @@ from tensorflow import keras
 from keras import backend as K
 import numpy as np
 import cv2
+# ⚠️ 修改：引入 mediapipe.tasks 相關模組
 import mediapipe as mp
+from mediapipe.tasks import python as mp_tasks
+from mediapipe.tasks.python import vision as mp_vision
 import joblib
 from typing import List, Tuple
 import matplotlib.pyplot as plt
@@ -17,7 +20,6 @@ from scipy.stats import pearsonr
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import streamlit as st
 
 # 設定頁面配置
 st.set_page_config(
@@ -32,34 +34,49 @@ st.set_page_config(
 def rmse(y_true, y_pred):
     return K.sqrt(K.mean(K.square(y_pred - y_true)))
 
+# ⚠️ 修改：定義 mediapipe 模型檔案路徑
+# 確保這個檔案 (pose_landmark_heavy.tflite) 與你的程式碼在同一個資料夾
+POSE_MODEL_PATH = "pose_landmark_heavy.tflite"
+
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
         # 使用 custom_objects 參數載入模型，以處理自訂函數
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
-        self.mp_pose = mp.solutions.pose
-        self.pose = self.mp_pose.Pose(
-            min_detection_confidence=0.5,
+        
+        # ⚠️ 修改：使用 mediapipe.tasks.python.vision 建立 PoseLandmarker
+        base_options = mp_tasks.BaseOptions(model_asset_path=POSE_MODEL_PATH)
+        options = mp_vision.PoseLandmarkerOptions(
+            base_options=base_options,
+            min_pose_detection_confidence=0.5,
             min_tracking_confidence=0.5,
-            model_complexity=2
+            min_pose_presence_confidence=0.5
         )
+        self.pose_landmarker = mp_vision.PoseLandmarker.create_from_options(options)
 
     def process_frame(self, frame: np.ndarray) -> List[float]:
         """處理單個影格並提取關鍵點（使用相對座標）"""
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.pose.process(rgb_frame)
+        
+        # ⚠️ 修改：使用 mediapipe.tasks API 處理影格
+        mp_image = mp_tasks.core.Image.create_from_numpy_array(rgb_frame)
+        detection_result = self.pose_landmarker.detect(mp_image)
 
-        if results.pose_landmarks:
-            landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility] for lm in results.pose_landmarks.landmark])
+        if detection_result.pose_landmarks:
+            # 只取第一個人的姿勢關鍵點
+            landmarks = detection_result.pose_landmarks[0]
+            
+            # 將 landmarks 轉換為 numpy 陣列
+            landmarks_np = np.array([[lm.x, lm.y, lm.z, lm.visibility] for lm in landmarks])
 
             # 獲取左髖 (23) 和右髖 (24) 的座標
-            left_hip = landmarks[23, :3]
-            right_hip = landmarks[24, :3]
+            left_hip = landmarks_np[23, :3]
+            right_hip = landmarks_np[24, :3]
             hip_center = (left_hip + right_hip) / 2
 
             # 獲取左肩 (11) 和右肩 (12) 的座標
-            left_shoulder = landmarks[11, :3]
-            right_shoulder = landmarks[12, :3]
+            left_shoulder = landmarks_np[11, :3]
+            right_shoulder = landmarks_np[12, :3]
             shoulder_center = (left_shoulder + right_shoulder) / 2
 
             # 計算標準化尺度
@@ -68,8 +85,8 @@ class PoseEvaluator:
                 scale = 1
 
             # 將所有關鍵點轉換為相對於髖關節中心的座標，並進行尺度標準化
-            normalized_landmarks = (landmarks[:, :3] - hip_center) / scale
-            normalized_landmarks = np.hstack((normalized_landmarks, landmarks[:, 3:4]))
+            normalized_landmarks = (landmarks_np[:, :3] - hip_center) / scale
+            normalized_landmarks = np.hstack((normalized_landmarks, landmarks_np[:, 3:4]))
 
             return normalized_landmarks.flatten().tolist()
         return None
@@ -171,26 +188,28 @@ def main():
     st.sidebar.header("⚙️ 系統設定")
 
     # 模型檔案路徑設定
+    # ⚠️ 修改：將預設值改為相對路徑，以適應 Streamlit Cloud
     model_path = st.sidebar.text_input(
         "模型檔案路徑",
-        value="CNN_squat_best.keras",
+        value="Alexnet_squat0603.keras",
         help="請輸入訓練好的 Keras 模型檔案路徑"
     )
 
     scaler_path = st.sidebar.text_input(
         "標準化器檔案路徑",
-        value="scaler_CNN_squat_best.pkl",
+        value="scaler_Alexnet_squat0603.pkl",
         help="請輸入用於資料標準化的 scaler 檔案路徑"
     )
     
-    # 檢查檔案是否存在
+    # ⚠️ 修改：增加對 mediapipe 模型檔案的檢查
     files_exist = all([
         os.path.exists(model_path) if model_path else False,
-        os.path.exists(scaler_path) if scaler_path else False
+        os.path.exists(scaler_path) if scaler_path else False,
+        os.path.exists(POSE_MODEL_PATH) if POSE_MODEL_PATH else False
     ])
 
     if not files_exist:
-        st.error("❌ 請確認模型檔案和標準化器檔案路徑正確")
+        st.error("❌ 請確認模型檔案、標準化器檔案和 mediapipe 模型檔案路徑正確")
         st.stop()
 
     # 初始化評估器
