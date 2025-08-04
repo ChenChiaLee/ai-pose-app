@@ -34,8 +34,8 @@ def rmse(y_true, y_pred):
     return K.sqrt(K.mean(K.square(y_pred - y_true)))
 
 # ⚠️ 定義檔案路徑和 Google Drive ID
-MODEL_PATH = "Alexnet_squat0603.keras"
-SCALER_PATH = "scaler_Alexnet_squat0603.pkl"
+MODEL_PATH = "CNN_squat_best.keras"
+SCALER_PATH = "scaler_CNN_squat_best.pkl"
 POSE_MODEL_PATH = "pose_landmark_heavy.tflite"
 
 # 請將這裡的 ID 替換為您自己的檔案 ID
