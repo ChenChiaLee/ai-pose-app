@@ -191,13 +191,13 @@ def main():
     # ⚠️ 修改：將預設值改為相對路徑，以適應 Streamlit Cloud
     model_path = st.sidebar.text_input(
         "模型檔案路徑",
-        value="Alexnet_squat0603.keras",
+        value="CNN_squat_best.keras",
         help="請輸入訓練好的 Keras 模型檔案路徑"
     )
 
     scaler_path = st.sidebar.text_input(
         "標準化器檔案路徑",
-        value="scaler_Alexnet_squat0603.pkl",
+        value="scaler_CNN_squat_best.pkl",
         help="請輸入用於資料標準化的 scaler 檔案路徑"
     )
     
