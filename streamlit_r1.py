@@ -8,7 +8,7 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_tasks
 from mediapipe.tasks.python import vision as mp_vision
 import joblib
-import gdown  # ⚠️ 新增 gdown 套件
+import gdown
 from typing import List, Tuple
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -38,27 +38,31 @@ MODEL_PATH = "CNN_squat_best.keras"
 SCALER_PATH = "scaler_CNN_squat_best.pkl"
 POSE_MODEL_PATH = "pose_landmark_heavy.tflite"
 
-# 請將這裡的 ID 替換為您自己的檔案 ID
+# ⚠️ 已使用您提供的檔案 ID
 MODEL_FILE_ID = "1rfKtqXaC9ZXhk52_qdaIVVQq_0EFa573"
 SCALER_FILE_ID = "15OJwaejPv7D8HIudP7koxfEfNPdGMsyB"
 POSE_FILE_ID = "1-yGZVfF8nQsRETziIFgS-jFKpHC-1xLo"
 
-@st.cache_resource # 使用快取裝飾器，確保檔案只下載一次
+@st.cache_resource
 def download_file_from_google_drive(file_id, output_path):
     """從 Google Drive 下載檔案，如果檔案不存在則下載"""
     if not os.path.exists(output_path):
         st.info(f"正在從 Google Drive 下載 {output_path}...")
-        gdown.download(f'https://drive.google.com/uc?id={file_id}', output_path, quiet=False)
-        st.success(f"✅ {output_path} 下載完成！")
+        try:
+            gdown.download(f'https://drive.google.com/uc?id={file_id}', output_path, quiet=False)
+            st.success(f"✅ {output_path} 下載完成！")
+        except Exception as e:
+            st.error(f"❌ 檔案下載失敗: {str(e)}")
+            st.stop()
     return output_path
 
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
+        # 使用 custom_objects 參數載入模型
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
 
-        # ⚠️ 修改：使用 mediapipe.tasks.python.vision 建立 PoseLandmarker
-        # 將 delegate 設定為 CPU，以避免 GPU 錯誤
+        # 設定 mediapipe 使用 CPU
         base_options = mp_tasks.BaseOptions(
             model_asset_path=POSE_MODEL_PATH,
             delegate=mp_tasks.BaseOptions.Delegate.CPU
@@ -76,26 +80,20 @@ class PoseEvaluator:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp_tasks.core.Image.create_from_numpy_array(rgb_frame)
         detection_result = self.pose_landmarker.detect(mp_image)
-
         if detection_result.pose_landmarks:
             landmarks = detection_result.pose_landmarks[0]
             landmarks_np = np.array([[lm.x, lm.y, lm.z, lm.visibility] for lm in landmarks])
-
             left_hip = landmarks_np[23, :3]
             right_hip = landmarks_np[24, :3]
             hip_center = (left_hip + right_hip) / 2
-
             left_shoulder = landmarks_np[11, :3]
             right_shoulder = landmarks_np[12, :3]
             shoulder_center = (left_shoulder + right_shoulder) / 2
-
             scale = np.linalg.norm(shoulder_center - hip_center)
             if scale == 0:
                 scale = 1
-
             normalized_landmarks = (landmarks_np[:, :3] - hip_center) / scale
             normalized_landmarks = np.hstack((normalized_landmarks, landmarks_np[:, 3:4]))
-
             return normalized_landmarks.flatten().tolist()
         return None
 
@@ -117,32 +115,24 @@ class PoseEvaluator:
         cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
-
         keypoints_list = []
         frame_count = 0
-
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-
             frame_count += 1
             if progress_callback:
                 progress_callback(frame_count / total_frames)
-
             keypoints = self.process_frame(frame)
             if keypoints:
                 keypoints_list.append(keypoints)
-
         cap.release()
-
         if len(keypoints_list) == 0:
             return None, None, None
-
         keypoints_array = np.array(keypoints_list)
         keypoints_array = self.scaler.transform(keypoints_array)
         keypoints_array = keypoints_array.reshape(-1, 33, 4)
-
         predictions = self.model.predict(keypoints_array, batch_size=32, verbose=0)
         stats = self.analyze_predictions(predictions)
         stats.update({
@@ -152,7 +142,6 @@ class PoseEvaluator:
             'duration': total_frames/fps,
             'detection_rate': (len(keypoints_list)/total_frames)*100
         })
-
         return stats['mean'], stats, predictions
 
 def create_interactive_plots(predictions):
@@ -171,25 +160,14 @@ def create_interactive_plots(predictions):
 def main():
     st.title("🏃‍♂️ AI 姿勢評估系統")
     st.markdown("---")
-
+    
     # ⚠️ 在這裡呼叫下載函數，確保檔案存在
-    try:
-        # 請確保這裡的 ID 替換為你自己的檔案 ID
-        MODEL_FILE_ID = "1rfKtqXaC9ZXhk52_qdaIVVQq_0EFa573"
-        SCALER_FILE_ID = "15OJwaejPv7D8HIudP7koxfEfNPdGMsyB"
-        POSE_FILE_ID = "1-yGZVfF8nQsRETziIFgS-jFKpHC-1xLo"
-
-        model_path_local = download_file_from_google_drive(MODEL_FILE_ID, "CNN_squat_best.keras")
-        scaler_path_local = download_file_from_google_drive(SCALER_FILE_ID, "scaler_CNN_squat_best.pkl")
-        pose_model_path_local = download_file_from_google_drive(POSE_FILE_ID, "pose_landmark_heavy.tflite")
-    except Exception as e:
-        st.error(f"❌ 檔案下載失敗: {str(e)}")
-        st.stop()
-
+    model_path_local = download_file_from_google_drive(MODEL_FILE_ID, MODEL_PATH)
+    scaler_path_local = download_file_from_google_drive(SCALER_FILE_ID, SCALER_PATH)
+    pose_model_path_local = download_file_from_google_drive(POSE_FILE_ID, POSE_MODEL_PATH)
+    
     # 側邊欄 - 設定參數
     st.sidebar.header("⚙️ 系統設定")
-
-    # ⚠️ 修改：將預設值改為相對路徑
     model_path = st.sidebar.text_input("模型檔案路徑", value=model_path_local, help="訓練好的 Keras 模型檔案")
     scaler_path = st.sidebar.text_input("標準化器檔案路徑", value=scaler_path_local, help="用於資料標準化的 scaler 檔案")
     
@@ -198,7 +176,7 @@ def main():
     if not files_exist:
         st.error("❌ 請確認模型檔案和標準化器檔案已存在")
         st.stop()
-
+    
     try:
         with st.spinner("正在載入模型..."):
             evaluator = PoseEvaluator(model_path, scaler_path)
@@ -206,9 +184,8 @@ def main():
     except Exception as e:
         st.sidebar.error(f"❌ 模型載入失敗: {str(e)}")
         st.stop()
-
+    
     col1, col2 = st.columns([2, 1])
-
     with col1:
         st.header("📹 影片上傳與分析")
         uploaded_file = st.file_uploader(
@@ -220,7 +197,6 @@ def main():
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
                 tmp_file.write(uploaded_file.read())
                 temp_video_path = tmp_file.name
-
             st.success(f"✅ 影片已上傳: {uploaded_file.name}")
             cap = cv2.VideoCapture(temp_video_path)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -229,17 +205,13 @@ def main():
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             cap.release()
-
             st.info(f"📊 影片資訊: {duration:.2f}秒 | {total_frames}幀 | {fps:.1f} FPS | {width}x{height}")
-
             if st.button("🚀 開始分析", type="primary"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-
                 def update_progress(progress):
                     progress_bar.progress(progress)
                     status_text.text(f"分析進度: {progress*100:.1f}%")
-
                 try:
                     avg_score, detailed_stats, predictions = evaluator.evaluate_video(
                         temp_video_path,
@@ -260,7 +232,6 @@ def main():
                 finally:
                     if os.path.exists(temp_video_path):
                         os.unlink(temp_video_path)
-
     with col2:
         st.header("📈 即時統計")
         if 'analysis_results' in st.session_state:
@@ -274,7 +245,6 @@ def main():
             with col2_2:
                 st.metric("最低分", f"{stats['min']:.2f}")
                 st.metric("影片長度", f"{stats['duration']:.1f}秒")
-
     if 'analysis_results' in st.session_state:
         st.markdown("---")
         st.header("📊 詳細分析結果")
