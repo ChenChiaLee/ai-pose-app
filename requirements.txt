@@ -10,3 +10,4 @@ matplotlib
 plotly
 requests
 scikit-learn==1.5.2
+gdown
