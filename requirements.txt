@@ -1,12 +1,11 @@
 streamlit
 tensorflow
-numpy==1.26.4
-opencv-python==4.8.0.76
-mediapipe==0.10.11
+opencv-python
+mediapipe
 joblib
+numpy
 pandas
-scipy
+matplotlib
 plotly
-seaborn
-scikit-learn
 gdown
+scikit-learn==1.5.2
