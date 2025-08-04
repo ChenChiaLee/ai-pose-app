@@ -1,11 +1,11 @@
 streamlit
-tensorflow
+tensorflow==2.15.0
 opencv-python
-mediapipe
+mediapipe==0.10.14
 joblib
 numpy
 pandas
 matplotlib
 plotly
-gdown
+requests
 scikit-learn==1.5.2
