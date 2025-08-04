@@ -4,11 +4,11 @@ from tensorflow import keras
 from keras import backend as K
 import numpy as np
 import cv2
-# ⚠️ 修改：引入 mediapipe.tasks 相關模組
 import mediapipe as mp
 from mediapipe.tasks import python as mp_tasks
 from mediapipe.tasks.python import vision as mp_vision
 import joblib
+import gdown  # ⚠️ 新增 gdown 套件
 from typing import List, Tuple
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -30,22 +30,39 @@ st.set_page_config(
 )
 
 # 定義自訂的 RMSE 損失函數
-# 這個函數必須與訓練模型時使用的完全相同
 def rmse(y_true, y_pred):
     return K.sqrt(K.mean(K.square(y_pred - y_true)))
 
-# ⚠️ 修改：定義 mediapipe 模型檔案路徑
-# 確保這個檔案 (pose_landmark_heavy.tflite) 與你的程式碼在同一個資料夾
+# ⚠️ 定義檔案路徑和 Google Drive ID
+MODEL_PATH = "Alexnet_squat0603.keras"
+SCALER_PATH = "scaler_Alexnet_squat0603.pkl"
 POSE_MODEL_PATH = "pose_landmark_heavy.tflite"
+
+# 請將這裡的 ID 替換為您自己的檔案 ID
+MODEL_FILE_ID = "1rfKtqXaC9ZXhk52_qdaIVVQq_0EFa573"
+SCALER_FILE_ID = "15OJwaejPv7D8HIudP7koxfEfNPdGMsyB"
+POSE_FILE_ID = "1-yGZVfF8nQsRETziIFgS-jFKpHC-1xLo"
+
+@st.cache_resource # 使用快取裝飾器，確保檔案只下載一次
+def download_file_from_google_drive(file_id, output_path):
+    """從 Google Drive 下載檔案，如果檔案不存在則下載"""
+    if not os.path.exists(output_path):
+        st.info(f"正在從 Google Drive 下載 {output_path}...")
+        gdown.download(f'https://drive.google.com/uc?id={file_id}', output_path, quiet=False)
+        st.success(f"✅ {output_path} 下載完成！")
+    return output_path
 
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
-        # 使用 custom_objects 參數載入模型，以處理自訂函數
         self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
-        
+
         # ⚠️ 修改：使用 mediapipe.tasks.python.vision 建立 PoseLandmarker
-        base_options = mp_tasks.BaseOptions(model_asset_path=POSE_MODEL_PATH)
+        # 將 delegate 設定為 CPU，以避免 GPU 錯誤
+        base_options = mp_tasks.BaseOptions(
+            model_asset_path=POSE_MODEL_PATH,
+            delegate=mp_tasks.BaseOptions.Delegate.CPU
+        )
         options = mp_vision.PoseLandmarkerOptions(
             base_options=base_options,
             min_pose_detection_confidence=0.5,
@@ -57,34 +74,25 @@ class PoseEvaluator:
     def process_frame(self, frame: np.ndarray) -> List[float]:
         """處理單個影格並提取關鍵點（使用相對座標）"""
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # ⚠️ 修改：使用 mediapipe.tasks API 處理影格
         mp_image = mp_tasks.core.Image.create_from_numpy_array(rgb_frame)
         detection_result = self.pose_landmarker.detect(mp_image)
 
         if detection_result.pose_landmarks:
-            # 只取第一個人的姿勢關鍵點
             landmarks = detection_result.pose_landmarks[0]
-            
-            # 將 landmarks 轉換為 numpy 陣列
             landmarks_np = np.array([[lm.x, lm.y, lm.z, lm.visibility] for lm in landmarks])
 
-            # 獲取左髖 (23) 和右髖 (24) 的座標
             left_hip = landmarks_np[23, :3]
             right_hip = landmarks_np[24, :3]
             hip_center = (left_hip + right_hip) / 2
 
-            # 獲取左肩 (11) 和右肩 (12) 的座標
             left_shoulder = landmarks_np[11, :3]
             right_shoulder = landmarks_np[12, :3]
             shoulder_center = (left_shoulder + right_shoulder) / 2
 
-            # 計算標準化尺度
             scale = np.linalg.norm(shoulder_center - hip_center)
             if scale == 0:
                 scale = 1
 
-            # 將所有關鍵點轉換為相對於髖關節中心的座標，並進行尺度標準化
             normalized_landmarks = (landmarks_np[:, :3] - hip_center) / scale
             normalized_landmarks = np.hstack((normalized_landmarks, landmarks_np[:, 3:4]))
 
@@ -94,7 +102,6 @@ class PoseEvaluator:
     def analyze_predictions(self, predictions: np.ndarray) -> dict:
         """分析預測結果並返回詳細統計資訊"""
         predictions = predictions.flatten()
-
         return {
             'min': np.min(predictions),
             'max': np.max(predictions),
@@ -132,16 +139,12 @@ class PoseEvaluator:
         if len(keypoints_list) == 0:
             return None, None, None
 
-        # 數據預處理
         keypoints_array = np.array(keypoints_list)
         keypoints_array = self.scaler.transform(keypoints_array)
         keypoints_array = keypoints_array.reshape(-1, 33, 4)
 
-        # 進行預測
         predictions = self.model.predict(keypoints_array, batch_size=32, verbose=0)
         stats = self.analyze_predictions(predictions)
-
-        # 添加額外統計資訊
         stats.update({
             'total_frames': total_frames,
             'effective_frames': len(keypoints_list),
@@ -153,30 +156,15 @@ class PoseEvaluator:
         return stats['mean'], stats, predictions
 
 def create_interactive_plots(predictions):
-    """創建互動式圖表"""
     predictions_flat = predictions.flatten()
-
-    # 創建子圖
     fig = make_subplots(
         rows=1, cols=2,
         subplot_titles=('預測值隨時間變化', '預測值分布'),
         specs=[[{"secondary_y": False}, {"secondary_y": False}]]
     )
-
-    # 1. 預測值隨時間變化
-    fig.add_trace(
-        go.Scatter(y=predictions_flat, mode='lines', name='預測值', line=dict(color='blue')),
-        row=1, col=1
-    )
-    fig.add_hline(y=np.mean(predictions_flat), line_dash="dash", line_color="red",
-                  annotation_text="平均值", row=1, col=1)
-
-    # 2. 預測值分布直方圖
-    fig.add_trace(
-        go.Histogram(x=predictions_flat, name='分布', nbinsx=30, opacity=0.7),
-        row=1, col=2
-    )
-
+    fig.add_trace(go.Scatter(y=predictions_flat, mode='lines', name='預測值', line=dict(color='blue')), row=1, col=1)
+    fig.add_hline(y=np.mean(predictions_flat), line_dash="dash", line_color="red", annotation_text="平均值", row=1, col=1)
+    fig.add_trace(go.Histogram(x=predictions_flat, name='分布', nbinsx=30, opacity=0.7), row=1, col=2)
     fig.update_layout(height=400, showlegend=True, title_text="姿勢評估分析結果")
     return fig
 
@@ -184,35 +172,28 @@ def main():
     st.title("🏃‍♂️ AI 姿勢評估系統")
     st.markdown("---")
 
+    # ⚠️ 在這裡呼叫下載函數，確保檔案存在
+    try:
+        model_path_local = download_file_from_google_drive(MODEL_FILE_ID, MODEL_PATH)
+        scaler_path_local = download_file_from_google_drive(SCALER_FILE_ID, SCALER_PATH)
+        pose_model_path_local = download_file_from_google_drive(POSE_FILE_ID, POSE_MODEL_PATH)
+    except Exception as e:
+        st.error(f"❌ 檔案下載失敗: {str(e)}")
+        st.stop()
+
     # 側邊欄 - 設定參數
     st.sidebar.header("⚙️ 系統設定")
 
-    # 模型檔案路徑設定
-    # ⚠️ 修改：將預設值改為相對路徑，以適應 Streamlit Cloud
-    model_path = st.sidebar.text_input(
-        "模型檔案路徑",
-        value="CNN_squat_best.keras",
-        help="請輸入訓練好的 Keras 模型檔案路徑"
-    )
-
-    scaler_path = st.sidebar.text_input(
-        "標準化器檔案路徑",
-        value="scaler_CNN_squat_best.pkl",
-        help="請輸入用於資料標準化的 scaler 檔案路徑"
-    )
+    # ⚠️ 修改：將預設值改為相對路徑
+    model_path = st.sidebar.text_input("模型檔案路徑", value=model_path_local, help="訓練好的 Keras 模型檔案")
+    scaler_path = st.sidebar.text_input("標準化器檔案路徑", value=scaler_path_local, help="用於資料標準化的 scaler 檔案")
     
-    # ⚠️ 修改：增加對 mediapipe 模型檔案的檢查
-    files_exist = all([
-        os.path.exists(model_path) if model_path else False,
-        os.path.exists(scaler_path) if scaler_path else False,
-        os.path.exists(POSE_MODEL_PATH) if POSE_MODEL_PATH else False
-    ])
-
+    files_exist = all([os.path.exists(model_path), os.path.exists(scaler_path), os.path.exists(pose_model_path_local)])
+    
     if not files_exist:
-        st.error("❌ 請確認模型檔案、標準化器檔案和 mediapipe 模型檔案路徑正確")
+        st.error("❌ 請確認模型檔案和標準化器檔案已存在")
         st.stop()
 
-    # 初始化評估器
     try:
         with st.spinner("正在載入模型..."):
             evaluator = PoseEvaluator(model_path, scaler_path)
@@ -221,28 +202,21 @@ def main():
         st.sidebar.error(f"❌ 模型載入失敗: {str(e)}")
         st.stop()
 
-    # 主要內容區域
     col1, col2 = st.columns([2, 1])
 
     with col1:
         st.header("📹 影片上傳與分析")
-
-        # 影片上傳
         uploaded_file = st.file_uploader(
             "選擇要分析的影片檔案",
             type=['mp4', 'avi', 'mov', 'mkv'],
             help="支援格式：MP4, AVI, MOV, MKV"
         )
-
         if uploaded_file is not None:
-            # 儲存上傳的檔案到臨時位置
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
                 tmp_file.write(uploaded_file.read())
                 temp_video_path = tmp_file.name
 
             st.success(f"✅ 影片已上傳: {uploaded_file.name}")
-
-            # 顯示影片資訊
             cap = cv2.VideoCapture(temp_video_path)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS)
@@ -253,7 +227,6 @@ def main():
 
             st.info(f"📊 影片資訊: {duration:.2f}秒 | {total_frames}幀 | {fps:.1f} FPS | {width}x{height}")
 
-            # 分析按鈕
             if st.button("🚀 開始分析", type="primary"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -263,16 +236,12 @@ def main():
                     status_text.text(f"分析進度: {progress*100:.1f}%")
 
                 try:
-                    # 執行分析
                     avg_score, detailed_stats, predictions = evaluator.evaluate_video(
                         temp_video_path,
                         progress_callback=update_progress
                     )
-
                     if avg_score is not None:
                         status_text.text("✅ 分析完成！")
-
-                        # 儲存結果到 session state
                         st.session_state['analysis_results'] = {
                             'avg_score': avg_score,
                             'detailed_stats': detailed_stats,
@@ -281,30 +250,18 @@ def main():
                         }
                     else:
                         st.error("❌ 未檢測到有效的姿勢數據，請檢查影片品質")
-
                 except Exception as e:
                     st.error(f"❌ 分析過程中發生錯誤: {str(e)}")
-
                 finally:
-                    # 清理臨時檔案
                     if os.path.exists(temp_video_path):
                         os.unlink(temp_video_path)
 
     with col2:
         st.header("📈 即時統計")
-
         if 'analysis_results' in st.session_state:
             results = st.session_state['analysis_results']
             stats = results['detailed_stats']
-
-            # 顯示主要分數
-            st.metric(
-                label="平均姿勢分數",
-                value=f"{results['avg_score']:.2f}",
-                delta=f"±{stats['std']:.2f}"
-            )
-
-            # 顯示其他統計資訊
+            st.metric(label="平均姿勢分數", value=f"{results['avg_score']:.2f}", delta=f"±{stats['std']:.2f}")
             col2_1, col2_2 = st.columns(2)
             with col2_1:
                 st.metric("最高分", f"{stats['max']:.2f}")
@@ -313,27 +270,18 @@ def main():
                 st.metric("最低分", f"{stats['min']:.2f}")
                 st.metric("影片長度", f"{stats['duration']:.1f}秒")
 
-    # 結果視覺化區域
     if 'analysis_results' in st.session_state:
         st.markdown("---")
         st.header("📊 詳細分析結果")
-
         results = st.session_state['analysis_results']
         predictions = results['predictions']
-
-        # 創建互動式圖表
         fig = create_interactive_plots(predictions)
         st.plotly_chart(fig, use_container_width=True)
-
-        # 詳細統計表格
         st.subheader("📋 統計摘要")
         stats_df = pd.DataFrame([
-            ['影片名稱', results['video_name']],
-            ['平均分數', f"{results['avg_score']:.2f}"],
-            ['標準差', f"{results['detailed_stats']['std']:.2f}"],
-            ['最小值', f"{results['detailed_stats']['min']:.2f}"],
-            ['最大值', f"{results['detailed_stats']['max']:.2f}"],
-            ['中位數', f"{results['detailed_stats']['median']:.2f}"],
+            ['影片名稱', results['video_name']], ['平均分數', f"{results['avg_score']:.2f}"],
+            ['標準差', f"{results['detailed_stats']['std']:.2f}"], ['最小值', f"{results['detailed_stats']['min']:.2f}"],
+            ['最大值', f"{results['detailed_stats']['max']:.2f}"], ['中位數', f"{results['detailed_stats']['median']:.2f}"],
             ['25th 百分位', f"{results['detailed_stats']['25th_percentile']:.2f}"],
             ['75th 百分位', f"{results['detailed_stats']['75th_percentile']:.2f}"],
             ['總幀數', f"{results['detailed_stats']['total_frames']}"],
@@ -341,7 +289,6 @@ def main():
             ['檢測率', f"{results['detailed_stats']['detection_rate']:.1f}%"],
             ['影片長度', f"{results['detailed_stats']['duration']:.2f} 秒"]
         ], columns=['項目', '數值'])
-
         st.dataframe(stats_df, use_container_width=True)
             
 if __name__ == "__main__":
