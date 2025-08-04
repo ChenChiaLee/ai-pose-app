@@ -174,9 +174,14 @@ def main():
 
     # ⚠️ 在這裡呼叫下載函數，確保檔案存在
     try:
-        model_path_local = download_file_from_google_drive(MODEL_FILE_ID, MODEL_PATH)
-        scaler_path_local = download_file_from_google_drive(SCALER_FILE_ID, SCALER_PATH)
-        pose_model_path_local = download_file_from_google_drive(POSE_FILE_ID, POSE_MODEL_PATH)
+        # 請確保這裡的 ID 替換為你自己的檔案 ID
+        MODEL_FILE_ID = "1rfKtqXaC9ZXhk52_qdaIVVQq_0EFa573"
+        SCALER_FILE_ID = "15OJwaejPv7D8HIudP7koxfEfNPdGMsyB"
+        POSE_FILE_ID = "1-yGZVfF8nQsRETziIFgS-jFKpHC-1xLo"
+
+        model_path_local = download_file_from_google_drive(MODEL_FILE_ID, "CNN_squat_best.keras")
+        scaler_path_local = download_file_from_google_drive(SCALER_FILE_ID, "scaler_CNN_squat_best.pkl")
+        pose_model_path_local = download_file_from_google_drive(POSE_FILE_ID, "pose_landmark_heavy.tflite")
     except Exception as e:
         st.error(f"❌ 檔案下載失敗: {str(e)}")
         st.stop()
