@@ -3,6 +3,7 @@ tensorflow==2.18.0
 keras==3.8.0
 opencv-python
 mediapipe==0.10.14
+gdown
 joblib
 numpy
 pandas
@@ -10,4 +11,3 @@ matplotlib
 plotly
 requests
 scikit-learn==1.5.2
-gdown
