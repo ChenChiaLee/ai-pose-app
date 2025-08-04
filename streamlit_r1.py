@@ -1,6 +1,7 @@
 import streamlit as st
 import tensorflow as tf
 from tensorflow import keras
+from keras import backend as K
 import numpy as np
 import cv2
 import mediapipe as mp
@@ -26,9 +27,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 定義自訂的 RMSE 損失函數
+# 這個函數必須與訓練模型時使用的完全相同
+def rmse(y_true, y_pred):
+    return K.sqrt(K.mean(K.square(y_pred - y_true)))
+
 class PoseEvaluator:
     def __init__(self, model_path: str, scaler_path: str):
-        self.model = keras.models.load_model(model_path)
+        # 使用 custom_objects 參數載入模型，以處理自訂函數
+        self.model = keras.models.load_model(model_path, custom_objects={'rmse': rmse})
         self.scaler = joblib.load(scaler_path)
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
